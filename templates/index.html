@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <title>Content generator</title>
+</head>
+<body>
+<div id="waiting-status-container" class="waiting-status-container" style="display:none">
+    <img src="/static/img/Mars animated.gif" >
+    <div style="color:blue;background-color:white">Generating content...</div>
+</div>
+<button onclick="openSettings()">Setting</button>
+<h1 style="text-align:center;color:blue;">Content generator</h1>
+<h2 style="text-align:center;color:blue;">Parameters</h2>
+<form id="parameters" style="display:flex;flex-direction:column;justify-content:center;align-items:center;overflow:auto">
+    <div style="display:flex;">
+        <button type="button" onclick="clearParameters()" style="margin-right:10px">Clear</button>
+        <button type="button" onclick="addParameterType()" style="margin-right:10px">Add type</button>
+    </div>
+    <input type="submit" value="Generate" id="submit-generation" style="margin:10px">
+</form>
+<div style="display:flex;flex-direction:column;position:absolute;left:25%;width:50%;height:30%">
+    <h2 style="text-align:center;color:blue;">Result</h2>
+    <textarea id="result" placeholder="content generation result" style="height:60%"></textarea>
+    <div style="display:flex;margin-top:5px">
+        <button type="button" onclick="saveResult()" style="margin-left:5px">Save result</button>
+        <button type="button" onclick="showResults()" style="margin-left:5px">Show results</button>
+    </div>
+    <div id="result-saving-status" style="color:blue"></div>
+</div>
+</body>
+<script>
+    const parametersForm = document.getElementById('parameters');
+    const resultTextarea = document.getElementById('result');
+    const submitGeneration = document.getElementById('submit-generation');
+    const waitingGIF = document.getElementById('waiting-status-container');
+    const parametersStorageKey = 'parameters';
+    const resultSavingStatus = document.getElementById('result-saving-status');
+    setParametersFormEvents();
+    getParameters();
+
+    function setParametersFormEvents() {
+        setGenerateEvent();
+        setInputEvent();
+    }
+
+    function setInputEvent() {
+        parametersForm.addEventListener('input', function(event) {
+           let parametersValues = getParametersValues();
+           localStorage.setItem(parametersStorageKey, JSON.stringify(parametersValues));
+        });
+    }
+
+    function setGenerateEvent() {
+        parametersForm.addEventListener('submit', function(event) {
+            event.preventDefault();
+            if (event.submitter !== submitGeneration) return;
+            let parametersValues = getParametersValues();
+            let url = '/content_generator/generate_content';
+            let settings = {method:'POST',
+                            headers:{'Content-Type':'application/json'},
+                            body:JSON.stringify(parametersValues)
+                            }
+            waitingGIF.style.display = 'flex';
+            fetch(url, settings)
+                .then(response => {
+                    waitingGIF.style.display = 'none';
+                    if (response.ok) {
+                        response.text().then(data => {
+                            resultTextarea.value = data;
+                            resultSavingStatus.textContent = 'result is not saved';
+                            resultSavingStatus.style.color = 'red';
+                        });
+                    } else {
+                        response.text().then(data => {
+                            alert(`Unable to change data due to ${data}`);
+                        });
+                    }
+                });
+        });
+    }
+
+    function getParametersValues() {
+        let formData = new FormData(parametersForm);
+        let dataObject = Object.fromEntries(formData);
+        let parametersValues = {};
+        for (let dataParameter in dataObject) {
+            //not for a prod
+            let parameterFlag = document.getElementById(`${dataParameter}__checkbox`);
+            if (parameterFlag.checked) {
+                let parameterDescr = dataParameter.split('#');
+                if (!(parameterDescr[0] in parametersValues)) parametersValues[parameterDescr[0]] = {};
+                parametersValues[parameterDescr[0]][parameterDescr[1]] = dataObject[dataParameter];
+            }
+        }
+        return parametersValues;
+    }
+
+    function setParametersValues() {
+        let parametersData = localStorage.getItem(parametersStorageKey);
+        if (parametersData !== null) {
+            let parametersValues = JSON.parse(parametersData);
+            for (let _type in parametersValues) {
+                for (let _parameter in parametersValues[_type]) {
+                    let parameterId = `${_type}#${_parameter}`;
+                    let parameterInput = document.getElementById(parameterId);
+                    if (parameterInput !== null) {
+                        let parameterCheckbox = document.getElementById(`${parameterId}__checkbox`);
+                        parameterInput.value = parametersValues[_type][_parameter];
+                        parameterCheckbox.checked = true;
+                    }
+                }
+            }
+        }
+    }
+
+    function fillParametersForm(generationParameters) {
+        for (let _type in generationParameters) {
+            let typeContainer = createTypeContainer(_type, generationParameters[_type].id);
+            for (let _parameter in generationParameters[_type].parameters) {
+                let parameterContainer = createParameterContainer(_type, _parameter,
+                                                          generationParameters[_type].parameters[_parameter].id,
+                                                          generationParameters[_type].parameters[_parameter].variants);
+                typeContainer.appendChild(parameterContainer);
+            }
+            parametersForm.insertBefore(typeContainer, submitGeneration);
+        }
+        setParametersValues();
+    }
+
+    function createTypeContainer(_type, type_id) {
+        let typeContainer = document.createElement('div');
+        typeContainer.style.display = 'flex';
+        typeContainer.style.flexDirection = 'column';
+        typeContainer.style.marginTop = '15px';
+        let headerContainer = document.createElement('div');
+        headerContainer.style.display = 'flex';
+        headerContainer.style.marginBottom = '10px';
+        typeContainer.appendChild(headerContainer);
+        let header = document.createElement('div');
+        header.style.fontSize = '1.17em';
+        header.style.fontWeight = 'bold';
+        header.style.color = 'blue';
+        header.textContent = _type;
+        headerContainer.appendChild(header);
+        let addButton = document.createElement('button');
+        addButton.type = 'button';
+        addButton.onclick = function() {
+            addParameter(type_id);
+        };
+        addButton.style.marginLeft = '5px';
+        addButton.style.height = '20px';
+        addButton.textContent = '+';
+        headerContainer.appendChild(addButton);
+        return typeContainer;
+    }
+
+    function createParameterContainer(_type, _parameter, parameter_id, variants) {
+        let _id = `${_type.replace(' ', '_')}#${_parameter.replace(' ', '_')}`;
+        let parameterContainer = document.createElement('div');
+        parameterContainer.style.display = 'flex';
+        parameterContainer.style.marginBottom = '2px';
+        let checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.id = `${_id}__checkbox`;
+        checkbox.checked = false;
+        checkbox.style.marginRight = '2px';
+        parameterContainer.appendChild(checkbox);
+        let label = document.createElement('label');
+        label.for = _id;
+        label.textContent = `${_parameter}:`;
+        label.style.marginRight = '2px';
+        parameterContainer.appendChild(label);
+        let input = document.createElement('input');
+        input.id = _id;
+        input.type = 'text';
+        input.name = _id;
+        input.addEventListener('input', function(event) {
+            //not for a prod
+            let parameterCheckbox = document.getElementById(`${event.target.id}__checkbox`);
+            parameterCheckbox.checked = !(event.target.value === '');
+        });
+        parameterContainer.appendChild(input);
+        let addButton = document.createElement('button');
+        addButton.type = 'button';
+        addButton.onclick = function() {
+            addParameterValueVariant(parameter_id);
+        }
+        addButton.textContent = '+';
+        addButton.style.marginLeft = '3px';
+        parameterContainer.appendChild(addButton);
+        if (variants) {
+            let _list_id = `${_id}-list`
+            input.setAttribute('list', _list_id);
+            let list = document.createElement('datalist');
+            list.id = _list_id;
+            for (let variant of variants) {
+                let option = document.createElement('option');
+                option.value = variant;
+                list.appendChild(option);
+            }
+            parameterContainer.appendChild(list);
+        }
+        return parameterContainer;
+    }
+
+    function getParameters() {
+        url = '/content_generator/get_request_parameters';
+        fetch(url)
+            .then(response => {
+                if (response.ok) {
+                    response.json().then(data => {
+                        fillParametersForm(data);
+                    });
+                } else {
+                    response.text().then(data => {
+                        console.log(`Unable to get data from server due to ${data}`);
+                    });
+                }
+            });
+    }
+
+    function openSettings() {
+        window.location.href = '/content_generator/parameters';
+    }
+
+    function clearParameters() {
+        if (confirm('All parameters below will be cleared. Do you want to continue?')) {
+            Array.from(parametersForm.elements).forEach(element => {
+                if (element.tagName === 'INPUT') {
+                   if (element.type === 'text') {
+                       element.value = '';
+                   } else if (element.type === 'checkbox') {
+                       element.checked = false;
+                   }
+                }
+            });
+        }
+    }
+
+    function saveResult() {
+        if (resultTextarea.value.trim() === '') {
+            alert('Nothing to save!');
+            return;
+        }
+        let resultDescription = {parameters: getParametersValues(),
+                                 result: resultTextarea.value
+                                 };
+        let url = '/content_generator/save_text_generation_result';
+        let settings = {method:'POST',
+                        headers:{'Content-Type':'application/json'},
+                        body:JSON.stringify(resultDescription)
+                        };
+        fetch(url, settings)
+            .then(response => {
+                if (response.ok) {
+                    alert('Result was saved to database');
+                    resultSavingStatus.textContent = 'result is saved';
+                    resultSavingStatus.style.color = 'green';
+                } else {
+                    response.text().then(data => {
+                        alert(data);
+                    });
+                }
+            });
+    }
+
+    function showResults() {
+        let url = '/content_generator/show_results_history';
+        let settings = {method:'POST',
+                        headers:{'Content-Type':'application/json'},
+                        body:JSON.stringify(getParametersValues())
+                        };
+        fetch(url, settings)
+            .then(response => {
+                window.location.href = response.url;
+            });
+    }
+
+    //functions below are not a prod-suited solution
+    function addParameterType() {
+        window.location.href = '/content_generator/parameters?adding_request&reference=parameters_types';
+    }
+
+    function addParameter(type_id) {
+        window.location.href = `/content_generator/parameters?adding_request&reference=parameters&type_id=${type_id}`;
+    }
+
+    function addParameterValueVariant(pid) {
+        let ref = 'parameters_values_variants';
+        window.location.href = `/content_generator/parameters?adding_request&reference=${ref}&parameter_id=${pid}`;
+    }
+
+</script>
+</html>

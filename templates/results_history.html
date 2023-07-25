@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Results history</title>
+</head>
+<body>
+<h1 id="no-results-text" style="display:none;color:blue">There is no previous results</h1>
+<div id="results-container"
+     style="display:flex;flex-direction:column;overflow:auto;position:absolute;width:100%;height:100%;align-items:center"></div>
+<script>
+    const noResultsText = document.getElementById('no-results-text');
+    const resultsContainer = document.getElementById('results-container');
+    const resultsText = {{ results | safe }};
+    const errorDescription = '{{ error_description }}';
+
+    if (errorDescription !== 'null') {
+        noResultsText.textContent = errorDescription;
+        noResultsText.style.display = 'block';
+        noResultsText.style.color = 'red';
+    } else if (resultsText === null) {
+        noResultsText.style.display = 'block';
+    } else {
+        showResults(resultsText);
+    }
+
+    function showResults(resultsData) {
+        for (let resultData of resultsData) {
+            let textarea = document.createElement('textarea');
+            textarea.style.height = '30%';
+            textarea.style.width = '60%';
+            textarea.style.overflow ='auto';
+            textarea.style.marginBottom = '10px';
+            textarea.value = resultData;
+            resultsContainer.appendChild(textarea);
+        }
+    }
+
+</script>
+</body>
+</html>

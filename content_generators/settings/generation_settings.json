@@ -1,0 +1,7 @@
+{
+  "text": {
+    "prompt_start": "I want you to generate an artistic text according to these parameters:",
+    "prompt_end": "Don't include anything except the text itself into your response.",
+    "default_generator": "ChatGPT"
+  }
+}

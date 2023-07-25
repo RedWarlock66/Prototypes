@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Parameters</title>
+</head>
+<body>
+<form id="change-element-form"
+      style="display:flex;visibility:hidden;z-index:999;position:absolute;left:50%;height:50%;flex-direction:column">
+    <label for="change-element-reference">Reference:</label>
+    <input type="text" readonly id="change-element-reference" name="reference">
+    <label for="change-element-is-new">Is new:</label>
+    <input type="checkbox" readonly id="change-element-is-new" name="is_new" disabled>
+    <input type="submit" id="change-element-submit" value="Confirm" style="margin:10px">
+    <button onclick="exitChangesForm()">Abort</button>
+</form>
+<h1 style="text-align:center;color:blue;">Content generator settings</h1>
+<script>
+    const typesContainer = document.createElement('div');
+    const parametersContainer = document.createElement('div');
+    const variantsContainer = document.createElement('div');
+    const tablesContextMenu = createTableContextMenu();
+    const changeElementsForm = initializeChangeElementForm();
+    const columnsDescription = {};
+    const openingParameters = new URLSearchParams(window.location.search);
+    document.body.appendChild(typesContainer);
+    document.body.appendChild(parametersContainer);
+    document.body.appendChild(variantsContainer);
+    var currentTable = '';
+    var currentElement = '';
+    var currentType = null;
+    var currentParameter = null;
+
+    addParametersTypes();
+    addParameters();
+    addParametersVariants();
+
+    //the solution below is definitely not for a prod
+    if (openingParameters.has('adding_request')) {
+       let reference = openingParameters.get('reference');
+       values = null;
+       if (reference == 'parameters') values = {type_id:openingParameters.get('type_id')};
+       if (reference == 'parameters_values_variants') values = {parameter_id:openingParameters.get('parameter_id')};
+       changeElement(reference, true, null, values);
+    }
+
+    function addParametersTypes() {
+        let reference_name = 'parameters_types';
+        let columns = [{name:'id', width:300, key:true},
+                       {name:'name', width:150},
+                       {name:'description', width:300}];
+        columnsDescription[reference_name] = columns;
+        addReferenceTable(typesContainer, reference_name, columns, true, null, parameterTypeOnclick);
+    }
+
+    function addParameters(addData = false, filter = null) {
+        let reference_name = 'parameters';
+        let columns = [{name:'id', width:300, key:true},
+                       {name:'type_id', width:300, hidden:true, key:true},
+                       {name:'name', width:150},
+                       {name:'description', width:300}];
+        columnsDescription[reference_name] = columns;
+        addReferenceTable(parametersContainer, reference_name, columns, addData, filter, parameterOnclick);
+    }
+
+    function addParametersVariants(addData = false, filter = null) {
+        let reference_name = 'parameters_values_variants';
+        let columns = [{name:'id', width:300, key:true},
+                       {name:'parameter_id', width:300, hidden:true, key:true},
+                       {name:'name', width:150},
+                       {name:'description', width:300}];
+        columnsDescription[reference_name] = columns;
+        addReferenceTable(variantsContainer, reference_name, columns, addData, filter);
+    }
+
+    function parameterTypeOnclick(event) {
+        if (event.target.id.slice(0,3) === 'id#') {
+            parametersContainer.innerHTML = '';
+            variantsContainer.innerHTML = '';
+            currentElementChanges(currentType, event.target);
+            currentType = event.target;
+            currentParameter = null;
+            addParameters(true, {'type_id':event.target.textContent});
+            addParametersVariants();
+        }
+    }
+
+    function parameterOnclick(event) {
+        if (event.target.id.slice(0,3) === 'id#') {
+           variantsContainer.innerHTML = '';
+           currentElementChanges(currentParameter, event.target);
+           currentParameter = event.target;
+           addParametersVariants(true, {'parameter_id':event.target.textContent});
+        }
+    }
+
+    function currentElementChanges(currentElement, newCurrentElement) {
+        if (currentElement !== null) currentElement.parentNode.style.backgroundColor = 'white';
+        newCurrentElement.parentNode.style.backgroundColor = 'lightyellow';
+    }
+
+    function addReferenceTable(parent, reference_name, columns, addData = true, filter = null, onclick = null) {
+        //hardcoding columns and ID field is a temporary solution for prototype only.
+        //they should be created dynamically based on tables' server descriptions in next versions
+        if (addData) {
+            let url = `/content_generator/reference_values_list?reference=${reference_name}`;
+            let settings = {method:'POST',
+                            headers:{'Content-Type':'application/json'}
+                            }
+            if (filter !== null) settings.body = JSON.stringify(filter);
+            fetch(url, settings)
+                .then(response => {
+                    if (response.status === 200) {
+                        response.json().then(data => {
+                            createTable(parent, reference_name, columns, data, 'id', onclick);
+                        });
+                    } else {
+                        response.text().then(data => {
+                            console.error(data);
+                        });
+                    }
+                });
+        } else {
+            createTable(parent, reference_name, columns, [], 'id', onclick);
+        }
+    }
+
+    function createTable(parent, name, columns, data, idField, onclick = null) {
+        let container = createTableContainer();
+        container.id = nameToId(name, 'container_');
+        let header = createTableHeader(name);
+        let addButton = createAddButton(name);
+        let table = createTableObject(name);
+        let tHead = createTHeadObject(name, columns);
+        let tBody = createTBodyObject(columns, data, idField);
+        if (onclick !== null) tBody.addEventListener('click', onclick);
+        table.appendChild(tHead);
+        table.appendChild(tBody);
+        container.appendChild(header);
+        container.appendChild(addButton);
+        container.appendChild(table);
+        parent.appendChild(container);
+    }
+
+    function createTableContainer() {
+        let container = document.createElement('div');
+        container.style.display = 'flex';
+        container.style.justifyContent = 'center';
+        container.style.alignItems = 'center';
+        container.style.flexDirection = 'column';
+        return container;
+    }
+
+    function createAddButton(reference) {
+        let button = document.createElement('button');
+        button.textContent = 'Add new element';
+        button.style.marginBottom = '5px';
+        button.id = `add_button#${reference}`;
+        //definitely not for a prod
+        if (reference == 'parameters' && currentType === null ||
+            reference == 'parameters_values_variants' && currentParameter === null) {
+            button.disabled = true;
+        }
+        button.addEventListener('click', function(event) {
+            //not for a prod
+            let referenceName = event.target.id.replace('add_button#', '');
+            values = null;
+            //definitely not for a prod
+            if (referenceName == 'parameters') values = {type_id:currentType.textContent};
+            if (referenceName == 'parameters_values_variants') values = {parameter_id:currentParameter.textContent};
+            changeElement(referenceName, true, null, values);
+        });
+        return button;
+    }
+
+    function createTableHeader(name) {
+        let header = document.createElement('h2');
+        header.textContent = name;
+        header.style.color = 'blue';
+        return header;
+    }
+
+    function createTableObject(name) {
+        let table = document.createElement('table');
+        table.border = '1';
+        table.cellSpacing = '0';
+        table.id = nameToId(name, 'table_');
+        return table;
+    }
+
+    function createTHeadObject(name, columns) {
+        let tHead = document.createElement('thead');
+        tHead.style.backgroundColor = 'lightgrey';
+        tHead.style.fontWeight = 'bold';
+        columnHeaderRow = document.createElement('tr');
+        for (column of columns) {
+            columnHeaderCell = document.createElement('td');
+            columnHeaderCell.width = column.width;
+            columnHeaderCell.textContent = column.name;
+            if (column.hidden === true) columnHeaderCell.style.display = 'none';
+            columnHeaderRow.appendChild(columnHeaderCell);
+        }
+        tHead.appendChild(columnHeaderRow);
+        return tHead;
+    }
+
+    function createTBodyObject(columns, data, idField) {
+        let tBody = document.createElement('tbody');
+        for (content of data) {
+            tRow = createTRowObject(columns, content, idField);
+            tBody.appendChild(tRow);
+        }
+        tBody.addEventListener('contextmenu', tableContextMenuEvent);
+        return tBody;
+    }
+
+    function createTRowObject(columns, content, idField) {
+        let tRow = document.createElement('tr');
+        tRow.id = content[idField];
+        tRow.onmouseover = function() {this.style.backgroundColor = 'lightblue'};
+        tRow.onmouseout = function() {
+            if (tRow.contains(currentType) || tRow.contains(currentParameter)) {
+                    this.style.backgroundColor = 'lightyellow';
+                } else {
+                    this.style.backgroundColor = 'white';
+                }
+            };
+        for (column of columns) {
+            let tCell = document.createElement('td');
+            tCell.id = `${column.name}#${tRow.id}`;
+            tCell.style.wordWrap = 'break-word';
+            tCell.width = column.width;
+            tCell.textContent = content[column.name];
+            if (column.hidden === true) tCell.style.display = 'none';
+            if (column.editable === true) tCell.contentEditable = true;
+            if (column.name === idField) tCell.style.cursor = 'pointer';
+            tRow.appendChild(tCell);
+        }
+        return tRow;
+    }
+
+    function nameToId(name, prefix = '') {
+        return `${prefix}${name.replace(' ', '_').toLowerCase()}`;
+    }
+
+    function tableContextMenuEvent(event) {
+        if (event.target.tagName === 'TD') {
+            event.preventDefault();
+            //prototype quick approach. not for a prod
+            currentTable = event.currentTarget.parentNode.id.replace('table_', '');
+            currentElement = event.target.parentNode.id;
+            //not the most effective approach. for prototype only
+            let header = document.getElementById('table-context-menu-header');
+            header.textContent = `table: ${currentTable} element: ${currentElement}`;
+            tablesContextMenu.style.left = event.clientX + 'px';
+            tablesContextMenu.style.top = event.clientY + 'px';
+            tablesContextMenu.style.display = 'block';
+        }
+    }
+
+    function createTableContextMenu() {
+        let tableContextMenu = document.createElement('ul');
+        tableContextMenu.style.display = 'none';
+        tableContextMenu.style.zIndex = '9999';
+        tableContextMenu.style.position = 'relative';
+        tableContextMenu.style.backgroundColor = 'white';
+        tableContextMenu.style.border = '1px solid #ccc';
+        tableContextMenu.style.width = '30%';
+        addTableContextMenuHeader(tableContextMenu);
+        addTableContextMenuItem(tableContextMenu, 'Edit current element', editTableElement);
+        addTableContextMenuItem(tableContextMenu, 'Delete current element', deleteTableElement);
+        document.body.appendChild(tableContextMenu);
+        document.body.addEventListener('click', function(event) {
+            if (tableContextMenu.style.display === 'block') tableContextMenu.style.display = 'none';
+        });
+        return tableContextMenu;
+    }
+
+    function addTableContextMenuHeader(menu) {
+        let tableContextMenuHeader = document.createElement('div');
+        tableContextMenuHeader.style.border = '1px solid #ccc';
+        tableContextMenuHeader.style.color = 'blue';
+        tableContextMenuHeader.style.backgroundColor = 'lightyellow';
+        tableContextMenuHeader.id = 'table-context-menu-header';
+        menu.appendChild(tableContextMenuHeader);
+    }
+
+    function addTableContextMenuItem(menu, textContent, onclick) {
+        tableContextMenuItem = document.createElement('li');
+        tableContextMenuItem.textContent = textContent;
+        tableContextMenuItem.style.cursor = 'pointer';
+        tableContextMenuItem.onmouseover  = function() {this.style.backgroundColor = 'lightgrey'};
+        tableContextMenuItem.onmouseout  = function() {this.style.backgroundColor = 'white'};
+        tableContextMenuItem.addEventListener('click', onclick);
+        menu.appendChild(tableContextMenuItem);
+    }
+
+    function editTableElement() {
+       changeElement(currentTable, false, currentElement);
+    }
+
+    function deleteTableElement() {
+        //integrity control should be ensured later
+        if (confirm(`Are you sure you want to delete ${currentElement} of the ${currentTable}?`)) {
+            let url = `/content_generator/delete_reference_element?reference=${currentTable}&id=${currentElement}`;
+            let settings = {method: 'DELETE'};
+            fetch(url, settings)
+                .then(response => {
+                    if (response.ok) {
+                        location.reload();
+                    } else {
+                        response.text().then(data => {
+                            alert(data);
+                        });
+                    }
+                });
+        } else {
+            alert('Deletion has been aborted!');
+        }
+    }
+
+    function changeElement(reference, is_new, elementId = null, values = null) {
+        if (!is_new) {
+            //without checking. for prototype only
+            let record = document.getElementById(elementId);
+            values = {};
+            for (let field of record.children) {
+                if (field.tagName === 'TD') {
+                    let fieldName = field.id.split('#')[0];
+                    values[fieldName] = field.textContent;
+                }
+            }
+        }
+        document.getElementById('change-element-reference').value = reference;
+        document.getElementById('change-element-is-new').checked = is_new;
+        addChangeFormInputs(columnsDescription[reference], values);
+        document.body.style.visibility = 'hidden';
+        changeElementsForm.style.visibility = 'visible';
+    }
+
+    function addChangeFormInputs(columns, values = null) {
+        const submit = document.getElementById('change-element-submit');
+        //not for a prod
+        const dynamicElements = document.querySelectorAll('[id^="dynamic#"]');
+        dynamicElements.forEach(dynamicElement => {
+            dynamicElement.remove();
+        });
+        for (column of columns) {
+            let _id = `dynamic#${column.name}`;
+            let label = document.createElement('label');
+            label.id = `${_id}_label`;
+            label.for = _id;
+            label.textContent = column.name;
+            let input = '';
+            if (column.key === true) {
+                input = document.createElement('input');
+                input.readOnly = true
+            } else {
+                input = document.createElement('textarea');
+            }
+            input.id = _id;
+            input.type = 'text';
+            input.style.width = column.width + 'px';
+            input.style.wordWrap = 'break-word';
+            input.name = column.name;
+            if (values !== null && column.name in values) input.value = values[column.name];
+            changeElementsForm.insertBefore(label, submit);
+            changeElementsForm.insertBefore(input, submit);
+        }
+    }
+
+    function exitChangesForm(changesConfirmed = false) {
+        //definitely not for a prod
+        if (openingParameters.has('adding_request')) {
+            window.location.href = '/content_generator';
+        } else if (changesConfirmed) {
+            location.reload();
+        } else {
+            changeElementsForm.style.visibility = 'hidden';
+            document.body.style.visibility = 'visible';
+        }
+    }
+
+    function initializeChangeElementForm() {
+        let changeElementForm = document.getElementById('change-element-form');
+        changeElementForm.addEventListener('submit', function(event) {
+            event.preventDefault();
+            //not for a prod
+            if (event.submitter.value === 'Confirm') {
+                if (confirm('The data will be changes. Do you confirm?')) {
+                    formData = new FormData(event.target);
+                    dataObject = Object.fromEntries(formData);
+                    let url = `/content_generator/change_reference_element?reference=${dataObject.reference}`;
+                    let isNewStateCheckbox = document.getElementById('change-element-is-new');
+                    if (isNewStateCheckbox.checked) {
+                        url += '&is_new';
+                    } else {
+                        url += `&id=${dataObject.id}`;
+                    }
+                    let settings = {method:'POST',
+                                    headers:{'Content-Type':'application/json'},
+                                    body:JSON.stringify(dataObject),
+                        }
+                    fetch(url, settings)
+                        .then(response => {
+                            if (response.ok) {
+                                exitChangesForm(true);
+                            } else {
+                                response.text().then(data => {
+                                    alert(`Unable to change data due to ${data}`);
+                                });
+                            }
+                        });
+                }
+            }
+        });
+        return changeElementForm;
+    }
+
+</script>
+</body>
+</html>
