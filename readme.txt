@@ -1,4 +1,4 @@
-Prototype of automatic content generator using LLMs. The following description is in russian
+Prototype of automatic content generator using LLMs. The following description is in russian (should be translated)
 
 Тестовый генератор контента:
 - сервер запускается через /content_generation_servise/app.py
